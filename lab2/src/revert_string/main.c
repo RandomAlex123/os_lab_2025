@@ -4,7 +4,7 @@
 
 #include "revert_string.h"
 
-int main(int argc, char *argv[])
+int main(int argc, char *argv[]) //argc - кол-во входный параметров(в том числе название программы)
 {
 	if (argc != 2)
 	{
