@@ -42,16 +42,24 @@ int main(int argc, char **argv) {
             seed = atoi(optarg);
             // your code here
             // error handling
+            if (seed <= 0) {
+              fprintf(stderr, "seed must be positive\n");
+              return 1;
+            }
             break;
           case 1:
             array_size = atoi(optarg);
-            // your code here
-            // error handling
+            if (array_size <= 0) {
+              fprintf(stderr, "array_size must be positive\n");
+              return 1;
+            }
             break;
           case 2:
             pnum = atoi(optarg);
-            // your code here
-            // error handling
+             if (pnum <= 0) {
+              fprintf(stderr, "pnum must be positive\n");
+              return 1;
+            }
             break;
           case 3:
             with_files = true;
@@ -88,6 +96,33 @@ int main(int argc, char **argv) {
   GenerateArray(array, array_size, seed);
   int active_child_processes = 0;
 
+  int **pipes = NULL;
+  if (!with_files) {
+    pipes = malloc(sizeof(int *) * pnum);
+    if (!pipes) {
+      perror("malloc");
+      free(array);
+      return 1;
+    }
+    for (int i = 0; i < pnum; i++) {
+      pipes[i] = malloc(sizeof(int) * 2);
+      if (!pipes[i]) {
+        perror("malloc");
+        for (int j = 0; j < i; j++) free(pipes[j]);
+        free(pipes);
+        free(array);
+        return 1;
+      }
+      if (pipe(pipes[i]) == -1) {
+        perror("pipe");
+        for (int j = 0; j <= i; j++) free(pipes[j]);
+        free(pipes);
+        free(array);
+        return 1;
+      }
+    }
+  }
+
   struct timeval start_time;
   gettimeofday(&start_time, NULL);
 
@@ -99,12 +134,46 @@ int main(int argc, char **argv) {
       if (child_pid == 0) {
         // child process
 
-        // parallel somehow
+        long long start = i * array_size / pnum;
+        long long end = (i + 1) * array_size / pnum;
+        long long len = end - start;
+
+        struct MinMax sub_minmax;
+        if (len <= 0) {
+          sub_minmax.min = INT_MAX;
+          sub_minmax.max = INT_MIN;
+        } else {
+          sub_minmax = GetMinMax(array, start, end);
+
+        }
 
         if (with_files) {
-          // use files here
+          char filename[256];
+          snprintf(filename, sizeof(filename), "result_%d.txt", i);
+          FILE *f = fopen(filename, "w");
+          if (!f) {
+            perror("fopen");
+            return 1;
+          }
+          if (fprintf(f, "%d %d\n", sub_minmax.min, sub_minmax.max) < 0) {
+            perror("fprintf");
+            fclose(f);
+            return 1;
+          }
+          fclose(f);
         } else {
-          // use pipe here
+          close(pipes[i][0]);
+          if (write(pipes[i][1], &sub_minmax.min, sizeof(int)) != sizeof(int)) {
+            perror("write min");
+            close(pipes[i][1]);
+            return 1;
+          }
+          if (write(pipes[i][1], &sub_minmax.max, sizeof(int)) != sizeof(int)) {
+            perror("write max");
+            close(pipes[i][1]);
+            return 1;
+          }
+          close(pipes[i][1]);
         }
         return 0;
       }
@@ -116,8 +185,7 @@ int main(int argc, char **argv) {
   }
 
   while (active_child_processes > 0) {
-    // your code here
-
+    wait(NULL);
     active_child_processes -= 1;
   }
 
@@ -130,13 +198,42 @@ int main(int argc, char **argv) {
     int max = INT_MIN;
 
     if (with_files) {
-      // read from files
+      char filename[256];
+      snprintf(filename, sizeof(filename), "result_%d.txt", i);
+      FILE *f = fopen(filename, "r");
+      if (!f) {
+        fprintf(stderr, "Warning: cannot open %s\n", filename);
+      } else {
+        if (fscanf(f, "%d %d", &min, &max) != 2) {
+          fprintf(stderr, "Warning: wrong format in %s\n", filename);
+          min = INT_MAX;
+          max = INT_MIN;
+        }
+        fclose(f);
+        remove(filename);
+      }
     } else {
-      // read from pipes
+      close(pipes[i][1]); 
+      ssize_t r = read(pipes[i][0], &min, sizeof(int));
+      if (r != sizeof(int)) {
+        min = INT_MAX;
+      }
+      r = read(pipes[i][0], &max, sizeof(int));
+      if (r != sizeof(int)) {
+        max = INT_MIN;
+      }
+      close(pipes[i][0]);
     }
 
     if (min < min_max.min) min_max.min = min;
     if (max > min_max.max) min_max.max = max;
+  }
+
+  if (!with_files) {
+    for (int i = 0; i < pnum; i++) {
+      free(pipes[i]);
+    }
+    free(pipes);
   }
 
   struct timeval finish_time;
