@@ -9,18 +9,17 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <signal.h>    // NEW
+#include <signal.h>   
 
 #include <getopt.h>
 
 #include "find_min_max.h"
 #include "utils.h"
 
-pid_t *child_pids = NULL; // NEW
-int pnum_global = 0;      // NEW
+pid_t *child_pids = NULL;
+int pnum_global = 0;     
 
-// Обработчик сигнала SIGALRM — убивает все дочерние процессы
-void KillChildren(int signum) { // NEW
+void KillChildren(int signum) {
   printf("Timeout reached! Killing child processes...\n");
   for (int i = 0; i < pnum_global; i++) {
     if (child_pids[i] > 0) {
@@ -34,7 +33,7 @@ int main(int argc, char **argv) {
   int array_size = -1;
   int pnum = -1;
   bool with_files = false;
-  int timeout = 0; // NEW
+  int timeout = 0;
 
   while (true) {
     int current_optind = optind ? optind : 1;
@@ -44,7 +43,7 @@ int main(int argc, char **argv) {
         {"array_size", required_argument, 0, 0},
         {"pnum", required_argument, 0, 0},
         {"by_files", no_argument, 0, 'f'},
-        {"timeout", required_argument, 0, 0}, // NEW
+        {"timeout", required_argument, 0, 0},
         {0, 0, 0, 0}};
 
     int option_index = 0;
@@ -108,8 +107,8 @@ int main(int argc, char **argv) {
   GenerateArray(array, array_size, seed);
   int active_child_processes = 0;
 
-  child_pids = calloc(pnum, sizeof(pid_t)); // NEW
-  pnum_global = pnum;                       // NEW
+  child_pids = calloc(pnum, sizeof(pid_t));
+  pnum_global = pnum;                      
 
   int **pipes = NULL;
   if (!with_files) {
@@ -129,7 +128,6 @@ int main(int argc, char **argv) {
   for (int i = 0; i < pnum; i++) {
     pid_t child_pid = fork();
     if (child_pid == 0) {
-      // CHILD
       long long start = i * array_size / pnum;
       long long end = (i + 1) * array_size / pnum;
 
@@ -150,8 +148,7 @@ int main(int argc, char **argv) {
       free(array);
       exit(0);
     } else if (child_pid > 0) {
-      // PARENT
-      child_pids[i] = child_pid; // NEW
+      child_pids[i] = child_pid;
       active_child_processes++;
     } else {
       perror("fork");
@@ -159,19 +156,17 @@ int main(int argc, char **argv) {
     }
   }
 
-  // Установка таймера и обработчика, если задан timeout
-  if (timeout > 0) { // NEW
+  if (timeout > 0) {
     signal(SIGALRM, KillChildren);
     alarm(timeout);
   }
 
-  // Неблокирующее ожидание завершения детей
-  while (active_child_processes > 0) { // NEW
+  while (active_child_processes > 0) {
     pid_t pid = waitpid(-1, NULL, WNOHANG);
     if (pid > 0) {
       active_child_processes--;
     } else {
-      usleep(100000); // немного подождать (0.1 сек)
+      usleep(100000);
     }
   }
 
@@ -210,7 +205,7 @@ int main(int argc, char **argv) {
   printf("Elapsed time: %fms\n", elapsed_time);
 
   free(array);
-  free(child_pids); // NEW
+  free(child_pids);
   if (pipes) {
     for (int i = 0; i < pnum; i++) free(pipes[i]);
     free(pipes);
