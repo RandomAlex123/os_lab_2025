@@ -11,38 +11,15 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
-#include "pthread.h"
+#include <pthread.h>
+#include "calc.h"
 
-struct FactorialArgs {
-  uint64_t begin;
-  uint64_t end;
-  uint64_t mod;
-};
-
-uint64_t MultModulo(uint64_t a, uint64_t b, uint64_t mod) {
-  uint64_t result = 0;
-  a = a % mod;
-  while (b > 0) {
-    if (b % 2 == 1)
-      result = (result + a) % mod;
-    a = (a * 2) % mod;
-    b /= 2;
-  }
-
-  return result % mod;
-}
-
-uint64_t Factorial(const struct FactorialArgs *args) {
-  uint64_t ans = 1;
-
-  // TODO: your code here
-
-  return ans;
-}
+//  ./server --port 20001 --tnum 4 &
 
 void *ThreadFactorial(void *args) {
   struct FactorialArgs *fargs = (struct FactorialArgs *)args;
-  return (void *)(uint64_t *)Factorial(fargs);
+  uint64_t res = Factorial(fargs);
+  return (void *)(uint64_t*)res;
 }
 
 int main(int argc, char **argv) {
@@ -52,9 +29,10 @@ int main(int argc, char **argv) {
   while (true) {
     int current_optind = optind ? optind : 1;
 
-    static struct option options[] = {{"port", required_argument, 0, 0},
-                                      {"tnum", required_argument, 0, 0},
-                                      {0, 0, 0, 0}};
+    static struct option options[] = {
+        {"port", required_argument, 0, 0},
+        {"tnum", required_argument, 0, 0},
+        {0, 0, 0, 0}};
 
     int option_index = 0;
     int c = getopt_long(argc, argv, "", options, &option_index);
@@ -63,26 +41,16 @@ int main(int argc, char **argv) {
       break;
 
     switch (c) {
-    case 0: {
+    case 0:
       switch (option_index) {
       case 0:
         port = atoi(optarg);
-        // TODO: your code here
         break;
       case 1:
         tnum = atoi(optarg);
-        // TODO: your code here
         break;
-      default:
-        printf("Index %d is out of options\n", option_index);
       }
-    } break;
-
-    case '?':
-      printf("Unknown argument\n");
       break;
-    default:
-      fprintf(stderr, "getopt returned character code 0%o?\n", c);
     }
   }
 
@@ -105,21 +73,22 @@ int main(int argc, char **argv) {
   int opt_val = 1;
   setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt_val, sizeof(opt_val));
 
-  int err = bind(server_fd, (struct sockaddr *)&server, sizeof(server));
-  if (err < 0) {
+  if (bind(server_fd, (struct sockaddr *)&server, sizeof(server)) < 0) {
     fprintf(stderr, "Can not bind to socket!");
     return 1;
   }
 
-  err = listen(server_fd, 128);
-  if (err < 0) {
+  if (listen(server_fd, 128) < 0) {
     fprintf(stderr, "Could not listen on socket\n");
     return 1;
   }
 
   printf("Server listening at %d\n", port);
+  
+  bool server_running = true;
 
-  while (true) {
+
+  while (server_running) {
     struct sockaddr_in client;
     socklen_t client_len = sizeof(client);
     int client_fd = accept(server_fd, (struct sockaddr *)&client, &client_len);
@@ -130,67 +99,50 @@ int main(int argc, char **argv) {
     }
 
     while (true) {
-      unsigned int buffer_size = sizeof(uint64_t) * 3;
-      char from_client[buffer_size];
-      int read = recv(client_fd, from_client, buffer_size, 0);
+      uint64_t begin, end, mod;
+      uint64_t buf[3];
+      int read_bytes = recv(client_fd, buf, sizeof(buf), 0);
 
-      if (!read)
+      if (!read_bytes)
         break;
-      if (read < 0) {
-        fprintf(stderr, "Client read failed\n");
-        break;
-      }
-      if (read < buffer_size) {
-        fprintf(stderr, "Client send wrong data format\n");
+      if (read_bytes < 0) {
+        perror("recv");
         break;
       }
 
-      pthread_t threads[tnum];
-
-      uint64_t begin = 0;
-      uint64_t end = 0;
-      uint64_t mod = 0;
-      memcpy(&begin, from_client, sizeof(uint64_t));
-      memcpy(&end, from_client + sizeof(uint64_t), sizeof(uint64_t));
-      memcpy(&mod, from_client + 2 * sizeof(uint64_t), sizeof(uint64_t));
-
-      fprintf(stdout, "Receive: %llu %llu %llu\n", begin, end, mod);
-
-      struct FactorialArgs args[tnum];
-      for (uint32_t i = 0; i < tnum; i++) {
-        // TODO: parallel somehow
-        args[i].begin = 1;
-        args[i].end = 1;
-        args[i].mod = mod;
-
-        if (pthread_create(&threads[i], NULL, ThreadFactorial,
-                           (void *)&args[i])) {
-          printf("Error: pthread_create failed!\n");
-          return 1;
-        }
-      }
+      begin = buf[0];
+      end = buf[1];
+      mod = buf[2];
 
       uint64_t total = 1;
-      for (uint32_t i = 0; i < tnum; i++) {
-        uint64_t result = 0;
-        pthread_join(threads[i], (void **)&result);
-        total = MultModulo(total, result, mod);
+
+      // распараллеливание
+      pthread_t threads[tnum];
+      struct FactorialArgs args[tnum];
+
+      uint64_t chunk = (end - begin + 1) / tnum;
+      uint64_t current = begin;
+
+      for (int i = 0; i < tnum; i++) {
+        args[i].begin = current;
+        args[i].end = (i == tnum - 1) ? end : (current + chunk - 1);
+        args[i].mod = mod;
+        current = args[i].end + 1;
+
+        pthread_create(&threads[i], NULL, ThreadFactorial, &args[i]);
       }
 
-      printf("Total: %llu\n", total);
-
-      char buffer[sizeof(total)];
-      memcpy(buffer, &total, sizeof(total));
-      err = send(client_fd, buffer, sizeof(total), 0);
-      if (err < 0) {
-        fprintf(stderr, "Can't send data to client\n");
-        break;
+      for (int i = 0; i < tnum; i++) {
+        uint64_t part = 0;
+        pthread_join(threads[i], (void **)&part);
+        total = MultModulo(total, part, mod);
       }
+
+      send(client_fd, &total, sizeof(total), 0);
     }
-
-    shutdown(client_fd, SHUT_RDWR);
+    server_running = false;
     close(client_fd);
   }
-
+  close(server_fd);
   return 0;
 }
