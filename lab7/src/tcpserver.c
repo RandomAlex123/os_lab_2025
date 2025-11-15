@@ -2,21 +2,25 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
 
-#define SERV_PORT 10050
-#define BUFSIZE 100
 #define SADDR struct sockaddr
 
-int main() {
+int main(int argc, char **argv) {
+  if (argc != 3) {
+    printf("Usage: %s <port> <bufsize>\n", argv[0]);
+    exit(1);
+  }
+
+  int SERV_PORT = atoi(argv[1]);
+  int BUFSIZE = atoi(argv[2]);
   const size_t kSize = sizeof(struct sockaddr_in);
 
   int lfd, cfd;
   int nread;
-  char buf[BUFSIZE];
+  char *buf = malloc(BUFSIZE);
   struct sockaddr_in servaddr;
   struct sockaddr_in cliaddr;
 
@@ -40,6 +44,8 @@ int main() {
     exit(1);
   }
 
+  printf("TCP Server listening on port %d...\n", SERV_PORT);
+
   while (1) {
     unsigned int clilen = kSize;
 
@@ -50,7 +56,7 @@ int main() {
     printf("connection established\n");
 
     while ((nread = read(cfd, buf, BUFSIZE)) > 0) {
-      write(1, &buf, nread);
+      write(1, buf, nread);
     }
 
     if (nread == -1) {
@@ -59,4 +65,5 @@ int main() {
     }
     close(cfd);
   }
+  free(buf);
 }

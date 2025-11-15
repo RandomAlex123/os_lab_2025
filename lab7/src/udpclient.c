@@ -1,7 +1,6 @@
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
-
 #include <arpa/inet.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -9,27 +8,30 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#define SERV_PORT 20001
-#define BUFSIZE 1024
 #define SADDR struct sockaddr
-#define SLEN sizeof(struct sockaddr_in)
 
 int main(int argc, char **argv) {
-  int sockfd, n;
-  char sendline[BUFSIZE], recvline[BUFSIZE + 1];
-  struct sockaddr_in servaddr;
-  struct sockaddr_in cliaddr;
-
-  if (argc != 2) {
-    printf("usage: client <IPaddress of server>\n");
+  if (argc != 4) {
+    printf("Usage: %s <IPaddress> <port> <bufsize>\n", argv[0]);
     exit(1);
   }
+
+  char *ip = argv[1];
+  int SERV_PORT = atoi(argv[2]);
+  int BUFSIZE = atoi(argv[3]);
+  int SLEN = sizeof(struct sockaddr_in);
+
+  int sockfd, n;
+  char *sendline = malloc(BUFSIZE);
+  char *recvline = malloc(BUFSIZE + 1);
+  struct sockaddr_in servaddr;
+  struct sockaddr_in cliaddr;
 
   memset(&servaddr, 0, sizeof(servaddr));
   servaddr.sin_family = AF_INET;
   servaddr.sin_port = htons(SERV_PORT);
 
-  if (inet_pton(AF_INET, argv[1], &servaddr.sin_addr) < 0) {
+  if (inet_pton(AF_INET, ip, &servaddr.sin_addr) < 0) {
     perror("inet_pton problem");
     exit(1);
   }
@@ -54,4 +56,6 @@ int main(int argc, char **argv) {
     printf("REPLY FROM SERVER= %s\n", recvline);
   }
   close(sockfd);
+  free(sendline);
+  free(recvline);
 }
